@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creative Builder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif; background: #1a1a1a; color: #fff; display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── SIDEBAR ─────────────────────────────────────────────── */
+  #sidebar { width: 340px; min-width: 340px; background: #222; border-right: 1px solid #333; overflow-y: auto; display: flex; flex-direction: column; }
+  #sidebar h1 { font-size: 15px; font-weight: 700; padding: 20px 20px 16px; border-bottom: 1px solid #333; letter-spacing: -0.3px; }
+  .section { padding: 16px 20px; border-bottom: 1px solid #2a2a2a; }
+  .section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #666; margin-bottom: 10px; }
+  label { font-size: 12px; color: #aaa; display: block; margin-bottom: 4px; margin-top: 10px; }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"], textarea, select {
+    width: 100%; background: #2d2d2d; border: 1px solid #3a3a3a; border-radius: 8px;
+    color: #fff; padding: 8px 10px; font-size: 13px; outline: none;
+    font-family: inherit; transition: border-color 0.15s;
+  }
+  input[type="text"]:focus, textarea:focus, select:focus { border-color: #555; }
+  textarea { resize: vertical; min-height: 70px; line-height: 1.4; }
+  select { cursor: pointer; } select option { background: #2d2d2d; }
+
+  .template-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tab-btn { flex: 1 1 calc(50% - 3px); padding: 8px 6px; border: 1px solid #3a3a3a; border-radius: 8px; background: #2d2d2d; color: #aaa; font-size: 11px; cursor: pointer; text-align: center; transition: all 0.15s; font-family: inherit; white-space: nowrap; }
+  .tab-btn:hover { border-color: #555; color: #fff; }
+  .tab-btn.active { background: #fff; color: #000; border-color: #fff; font-weight: 600; }
+
+  .upload-area { border: 1.5px dashed #3a3a3a; border-radius: 8px; padding: 14px; text-align: center; cursor: pointer; transition: all 0.15s; position: relative; overflow: hidden; }
+  .upload-area:hover { border-color: #555; }
+  .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-area .upload-label { font-size: 12px; color: #666; pointer-events: none; }
+  .upload-area .preview-img { width: 100%; max-height: 80px; object-fit: cover; border-radius: 6px; display: none; }
+
+  .color-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .color-swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s; flex-shrink: 0; }
+  .color-swatch.active { border-color: #fff; }
+
+  .todo-items { display: flex; flex-direction: column; gap: 6px; }
+  .todo-item { display: flex; gap: 6px; align-items: center; }
+  .todo-item input[type="text"] { flex: 1; }
+  .todo-item select { width: 90px; flex-shrink: 0; }
+  .add-btn { width: 100%; margin-top: 8px; padding: 7px; background: #2d2d2d; border: 1px dashed #3a3a3a; border-radius: 8px; color: #666; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .add-btn:hover { border-color: #555; color: #aaa; }
+  .remove-btn { background: none; border: none; color: #555; font-size: 16px; cursor: pointer; padding: 0 2px; line-height: 1; transition: color 0.15s; }
+  .remove-btn:hover { color: #f55; }
+
+  .format-toggle { display: flex; gap: 6px; }
+  .format-btn { flex: 1; padding: 7px; border: 1px solid #3a3a3a; border-radius: 8px; background: #2d2d2d; color: #aaa; font-size: 12px; cursor: pointer; font-family: inherit; transition: all 0.15s; text-align: center; }
+  .format-btn.active { background: #fff; color: #000; border-color: #fff; font-weight: 600; }
+
+  .export-btns { padding: 16px 20px 20px; }
+  .export-btn { width: 100%; padding: 12px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity 0.15s; background: #fff; color: #000; }
+  .export-btn:hover { opacity: 0.85; }
+
+  /* ── MAIN PREVIEW ────────────────────────────────────────── */
+  #main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; overflow: auto; background: #111; }
+  #preview-frame { position: relative; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.7); }
+
+  .field-group { display: none; }
+  .field-group.active { display: block; }
+
+  /* ── STORY SAFE ZONE — story-frame ─────────────────────────
+     Top unsafe:    14% of 1920 = 269px  (Reels header UI)
+     Bottom unsafe: 420px from bottom
+  ─────────────────────────────────────────────────────────── */
+  .story-frame {
+    position: absolute;
+    top: 250px;        /* starts at top safe zone boundary (~13% of 1920) */
+    left: 0; right: 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+    /* no height / overflow — content flows naturally downward */
+  }
+  /* Content flows from top, no centering */
+  .story-frame .notes-body-wrap,
+  .story-frame .notif-main,
+  .story-frame .cal-body,
+  .story-frame .rem-body { justify-content: flex-start; }
+  /* Home indicator would overlap content — hide in story frame */
+  .story-frame .home-indicator { display: none; }
+  /* Call buttons: smaller bottom padding inside the frame */
+  .story-frame .call-buttons { padding-bottom: 40px !important; }
+  /* Call in story: fixed height (1920-250-420=1250px) — buttons land exactly at bottom safe zone edge */
+  #tpl-call.is-story .story-frame { height: 1250px; }
+
+  /* Visual safe zone guides (preview only, not exported) */
+  .sz-overlay { position:absolute; inset:0; pointer-events:none; z-index:200; }
+  .sz-band { position:absolute; left:0; right:0; }
+  .sz-band-top  { top:0; background:rgba(236,64,122,0.12); border-bottom:2px dashed rgba(236,64,122,0.75); }
+  .sz-band-bot  { bottom:0; background:rgba(236,64,122,0.12); border-top:2px dashed rgba(236,64,122,0.75); }
+  .sz-label { position:absolute; right:0; font-size:9px; font-weight:700; color:#fff;
+    background:rgba(236,64,122,0.85); padding:2px 5px; border-radius:2px 0 0 2px; white-space:nowrap; letter-spacing:.4px; }
+  .sz-label-top { bottom:3px; }
+  .sz-label-bot { top:3px; }
+
+  /* ═══════════════════════════════════════════════════════════
+     TEMPLATES  —  all sizes are at 1080px canvas resolution
+     Status bar and text are intentionally large for social ads
+  ═══════════════════════════════════════════════════════════ */
+
+  /* ── STATUS BAR ──────────────────────────────────────────── */
+  .status-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 52px; height: 110px; flex-shrink: 0; position: relative; z-index: 10;
+  }
+  .sb-left { display: flex; align-items: center; gap: 12px; }
+  .sb-time { font-size: 46px; font-weight: 400; letter-spacing: -1px; line-height: 1; }
+  .sb-right { display: flex; align-items: center; gap: 14px; }
+  .sb-signal { display: flex; align-items: flex-end; gap: 4px; height: 30px; }
+  .sb-signal span { display: block; width: 9px; border-radius: 2px; background: currentColor; }
+  .sb-signal span:nth-child(1) { height: 14px; }
+  .sb-signal span:nth-child(2) { height: 20px; }
+  .sb-signal span:nth-child(3) { height: 26px; }
+  .sb-signal span:nth-child(4) { height: 30px; opacity: 0.3; }
+  .sb-wifi { width: 34px; height: 26px; }
+  .sb-battery { display: flex; align-items: center; gap: 2px; }
+  .sb-battery-body { width: 46px; height: 24px; border: 2px solid currentColor; border-radius: 5px; position: relative; padding: 3px; }
+  .sb-battery-fill { background: currentColor; height: 100%; width: 75%; border-radius: 2px; }
+  .sb-battery-cap { width: 4px; height: 12px; background: currentColor; border-radius: 0 2px 2px 0; opacity: 0.5; }
+
+  /* ── HOME INDICATOR ──────────────────────────────────────── */
+  .home-indicator { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); width: 280px; height: 8px; border-radius: 4px; }
+  .hi-dark { background: rgba(255,255,255,0.45); }
+  .hi-light { background: rgba(0,0,0,0.18); }
+
+  /* ── BACK CHEVRON ────────────────────────────────────────── */
+  .nav-back { display: flex; align-items: center; gap: 10px; font-size: 38px; font-weight: 400; }
+  .nav-back svg { width: 22px; height: 36px; }
+
+  /* ══ NOTES ══════════════════════════════════════════════════ */
+  #tpl-notes { background: #fafaf8; width: 100%; height: 100%; display: flex; flex-direction: column; position: relative; }
+  .notes-nav { display: flex; justify-content: space-between; align-items: center; padding: 0 40px 20px; }
+  .notes-actions { display: flex; gap: 32px; font-size: 42px; }
+  .notes-body-wrap { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; padding: 0 56px 100px; overflow: hidden; }
+  .notes-title { font-size: 82px; font-weight: 800; color: #000; letter-spacing: -2px; line-height: 1.1; margin-bottom: 36px; word-break: break-word; }
+  .notes-body { font-size: 50px; color: #000; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+
+  /* ══ NOTIFICATION ═══════════════════════════════════════════ */
+  #tpl-notif { width: 100%; height: 100%; display: flex; flex-direction: column; position: relative; }
+  .notif-bg { position: absolute; inset: 0; }
+  .notif-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(40px) brightness(0.65); transform: scale(1.12); }
+  .notif-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; }
+  .notif-main { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; padding: 16px 36px 100px; gap: 18px; }
+  .notif-card { background: rgba(255,255,255,0.93); border-radius: 30px; padding: 28px 32px 32px; backdrop-filter: blur(30px); }
+  .notif-header { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
+  .notif-app-icon { width: 80px; height: 80px; border-radius: 18px; flex-shrink: 0; overflow: hidden; background: #eee; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 36px; }
+  .notif-app-icon img { width: 100%; height: 100%; object-fit: cover; }
+  .notif-app-name { font-size: 28px; font-weight: 600; color: #444; flex: 1; }
+  .notif-time { font-size: 24px; color: #999; }
+  .notif-title { font-size: 38px; font-weight: 700; color: #000; margin-bottom: 8px; line-height: 1.2; }
+  .notif-body { font-size: 34px; color: #333; line-height: 1.45; }
+
+  /* ══ CALL ═══════════════════════════════════════════════════ */
+  #tpl-call { width: 100%; height: 100%; display: flex; flex-direction: column; position: relative; }
+  .call-bg { position: absolute; inset: 0; }
+  .call-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(50px) brightness(0.45) saturate(1.6); transform: scale(1.15); }
+  .call-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; }
+  .call-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 0 60px; }
+  .call-avatar { width: 240px; height: 240px; border-radius: 50%; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 96px; }
+  .call-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .call-name { font-size: 76px; font-weight: 400; color: #fff; text-align: center; letter-spacing: -1px; line-height: 1.1; }
+  .call-subtitle { font-size: 38px; color: rgba(255,255,255,0.65); letter-spacing: 0.3px; }
+  .call-buttons { display: flex; justify-content: space-around; padding: 0 80px 100px; }
+  .call-btn { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+  .call-btn-circle { width: 150px; height: 150px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .call-btn-circle.decline { background: #ff3b30; }
+  .call-btn-circle.accept  { background: #34c759; }
+  .call-btn-circle svg { width: 64px; height: 64px; fill: #fff; }
+  .call-btn-label { color: #fff; font-size: 30px; }
+
+  /* ══ CALENDAR ═══════════════════════════════════════════════ */
+  #tpl-calendar { background: #f2f2f7; width: 100%; height: 100%; display: flex; flex-direction: column; position: relative; }
+  .cal-nav { display: flex; justify-content: space-between; align-items: center; padding: 0 44px 14px; }
+  .cal-month { font-size: 38px; font-weight: 400; }
+  .cal-actions { display: flex; gap: 36px; font-size: 40px; }
+  .cal-body { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; padding: 0 0 100px; }
+  .cal-day-label { padding: 0 50px; font-size: 30px; font-weight: 500; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+  .cal-day-num { padding: 8px 50px 28px; font-size: 160px; font-weight: 300; color: #ff3b30; letter-spacing: -6px; line-height: 1; }
+  .cal-events-list { display: flex; flex-direction: column; gap: 18px; }
+  .cal-event { margin: 0 36px; background: #fff; border-radius: 24px; overflow: hidden; display: flex; box-shadow: 0 2px 12px rgba(0,0,0,0.09); }
+  .cal-event-stripe { width: 10px; background: #ff3b30; flex-shrink: 0; }
+  .cal-event-body { padding: 28px 32px; flex: 1; }
+  .cal-event-title { font-size: 42px; font-weight: 700; color: #000; margin-bottom: 10px; line-height: 1.2; word-break: break-word; }
+  .cal-event-time { font-size: 30px; color: #666; margin-bottom: 10px; }
+  .cal-event-loc { font-size: 30px; color: #666; display: flex; align-items: flex-start; gap: 8px; }
+
+  /* ══ REMINDERS ══════════════════════════════════════════════ */
+  #tpl-reminders { background: #f2f2f7; width: 100%; height: 100%; display: flex; flex-direction: column; position: relative; }
+  .rem-nav { display: flex; justify-content: space-between; align-items: center; padding: 0 40px 14px; }
+  .rem-actions { font-size: 44px; color: #007aff; }
+  .rem-body { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; padding: 0 0 100px; }
+  .rem-title-text { font-size: 82px; font-weight: 700; color: #007aff; padding: 4px 48px 28px; letter-spacing: -2px; line-height: 1.1; word-break: break-word; }
+  .rem-list { margin: 0 32px; background: #fff; border-radius: 24px; overflow: hidden; }
+  .rem-item { display: flex; align-items: center; gap: 24px; padding: 26px 30px; border-bottom: 1px solid #e5e5ea; }
+  .rem-item:last-child { border-bottom: none; }
+  .rem-check { width: 52px; height: 52px; border-radius: 50%; border: 2.5px solid #007aff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .rem-check.checked { background: #007aff; border-color: #007aff; }
+  .rem-check svg { width: 26px; height: 26px; display: none; }
+  .rem-check.checked svg { display: block; }
+  .rem-item-text { font-size: 40px; color: #000; line-height: 1.2; }
+  .rem-item-text.checked { text-decoration: line-through; color: #aaa; }
+  .rem-add { display: flex; align-items: center; gap: 24px; padding: 26px 30px; }
+  .rem-add-icon { width: 52px; height: 52px; border-radius: 50%; background: #007aff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #fff; font-size: 32px; line-height: 1; font-weight: 300; }
+  .rem-add-label { font-size: 40px; color: #007aff; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <h1>Creative Builder</h1>
+
+  <div class="section">
+    <div class="section-title">Šablona</div>
+    <div class="template-tabs">
+      <button class="tab-btn active" data-tpl="notes">Notes</button>
+      <button class="tab-btn" data-tpl="notif">Notifikace</button>
+      <button class="tab-btn" data-tpl="call">Hovor</button>
+      <button class="tab-btn" data-tpl="calendar">Kalendář</button>
+      <button class="tab-btn" data-tpl="reminders">Připomínky</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Čas &amp; Formát</div>
+    <label>Čas na stavovém řádku</label>
+    <input type="text" id="status-time" value="9:41" maxlength="8">
+    <div style="margin-top:10px">
+      <label>Formát exportu</label>
+      <div class="format-toggle">
+        <button class="format-btn active" data-fmt="square">1080×1080</button>
+        <button class="format-btn" data-fmt="portrait">1080×1350</button>
+        <button class="format-btn" data-fmt="story">1080×1920</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTES -->
+  <div class="section field-group active" id="fg-notes">
+    <div class="section-title">Notes</div>
+    <label>Nadpis</label>
+    <input type="text" id="notes-title" value="Nezapomeň na tohle 📝">
+    <label>Obsah (každý řádek = nový odstavec)</label>
+    <textarea id="notes-body">Toto je tvůj nadpis
+Přidej sem svůj text
+Každý řádek = nový odstavec
+Vypadá to skvěle 🙌</textarea>
+  </div>
+
+  <!-- NOTIFICATION -->
+  <div class="section field-group" id="fg-notif">
+    <div class="section-title">Notifikace</div>
+    <label>Logo aplikace (sdílené)</label>
+    <div class="upload-area">
+      <input type="file" accept="image/*" id="up-notif-icon">
+      <img class="preview-img" id="prev-notif-icon">
+      <div class="upload-label">Klikni nebo přetáhni obrázek</div>
+    </div>
+    <label>Pozadí (rozmazané)</label>
+    <div class="upload-area">
+      <input type="file" accept="image/*" id="up-notif-bg">
+      <img class="preview-img" id="prev-notif-bg">
+      <div class="upload-label">Klikni nebo přetáhni obrázek</div>
+    </div>
+    <label>Barva pozadí (bez fotky)</label>
+    <div class="color-row" id="notif-bg-colors">
+      <div class="color-swatch active" style="background:#4a5568" data-color="#4a5568"></div>
+      <div class="color-swatch" style="background:#1a202c" data-color="#1a202c"></div>
+      <div class="color-swatch" style="background:#553c9a" data-color="#553c9a"></div>
+      <div class="color-swatch" style="background:#2c5282" data-color="#2c5282"></div>
+      <div class="color-swatch" style="background:#276749" data-color="#276749"></div>
+      <div class="color-swatch" style="background:#742a2a" data-color="#742a2a"></div>
+    </div>
+    <div style="margin-top:12px">
+      <div class="section-title">Notifikace</div>
+      <div id="notif-cards-ui" style="display:flex;flex-direction:column;gap:10px;"></div>
+      <button class="add-btn" id="add-notif-card">+ Přidat notifikaci</button>
+    </div>
+  </div>
+
+  <!-- CALL -->
+  <div class="section field-group" id="fg-call">
+    <div class="section-title">Příchozí hovor</div>
+    <label>Jméno volajícího</label>
+    <input type="text" id="call-name" value="Jan Novák">
+    <label>Podtitulek</label>
+    <input type="text" id="call-subtitle" value="příchozí hovor">
+    <label>Avatar / Logo</label>
+    <div class="upload-area">
+      <input type="file" accept="image/*" id="up-call-avatar">
+      <img class="preview-img" id="prev-call-avatar">
+      <div class="upload-label">Klikni nebo přetáhni obrázek</div>
+    </div>
+    <label>Barva avatara (bez fotky)</label>
+    <div class="color-row" id="call-avatar-colors">
+      <div class="color-swatch active" style="background:#f5c542" data-color="#f5c542"></div>
+      <div class="color-swatch" style="background:#007aff" data-color="#007aff"></div>
+      <div class="color-swatch" style="background:#34c759" data-color="#34c759"></div>
+      <div class="color-swatch" style="background:#ff3b30" data-color="#ff3b30"></div>
+      <div class="color-swatch" style="background:#af52de" data-color="#af52de"></div>
+    </div>
+    <label>Pozadí (rozmazané)</label>
+    <div class="upload-area">
+      <input type="file" accept="image/*" id="up-call-bg">
+      <img class="preview-img" id="prev-call-bg">
+      <div class="upload-label">Klikni nebo přetáhni obrázek</div>
+    </div>
+    <label>Barva pozadí (bez fotky)</label>
+    <div class="color-row" id="call-bg-colors">
+      <div class="color-swatch active" style="background:#4a5c1a" data-color="#4a5c1a"></div>
+      <div class="color-swatch" style="background:#1a1a2e" data-color="#1a1a2e"></div>
+      <div class="color-swatch" style="background:#2c2c54" data-color="#2c2c54"></div>
+      <div class="color-swatch" style="background:#1b3a4b" data-color="#1b3a4b"></div>
+      <div class="color-swatch" style="background:#2d1b33" data-color="#2d1b33"></div>
+    </div>
+  </div>
+
+  <!-- CALENDAR -->
+  <div class="section field-group" id="fg-calendar">
+    <div class="section-title">Kalendář</div>
+    <label>Měsíc (záhlaví)</label>
+    <input type="text" id="cal-month" value="Březen">
+    <label>Den v týdnu</label>
+    <input type="text" id="cal-dayname" value="NEDĚLE">
+    <label>Číslo dne</label>
+    <input type="text" id="cal-daynum" value="8">
+    <div style="margin-top:12px">
+      <div class="section-title">Události</div>
+      <div id="cal-events-ui" style="display:flex;flex-direction:column;gap:10px;"></div>
+      <button class="add-btn" id="add-cal-event">+ Přidat událost</button>
+    </div>
+  </div>
+
+  <!-- REMINDERS -->
+  <div class="section field-group" id="fg-reminders">
+    <div class="section-title">Připomínky</div>
+    <label>Nadpis seznamu</label>
+    <input type="text" id="rem-title" value="Nákupní seznam">
+    <label>Položky</label>
+    <div class="todo-items" id="todo-items"></div>
+    <button class="add-btn" id="add-todo">+ Přidat položku</button>
+  </div>
+
+  <div style="flex:1"></div>
+  <div class="export-btns">
+    <button class="export-btn" id="btn-export">Stáhnout PNG</button>
+    <button class="export-btn" id="btn-export-all" style="margin-top:8px;background:#333;color:#fff;border:1px solid #444;">Stáhnout vše (3 formáty)</button>
+    <button id="btn-viewall" style="margin-top:8px;width:100%;padding:9px;border-radius:10px;border:1px solid #3a3a3a;background:#2d2d2d;color:#aaa;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.15s;">
+      Zobrazit vše najednou
+    </button>
+    <button id="btn-safezone" style="margin-top:6px;width:100%;padding:9px;border-radius:10px;border:1px solid #3a3a3a;background:#2d2d2d;color:#aaa;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.15s;" title="Zobrazí safe zóny u story formátu">
+      Zobrazit safe zóny
+    </button>
+  </div>
+</div>
+
+<!-- PREVIEW -->
+<div id="main">
+  <div id="preview-frame"></div>
+</div>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────────────────────
+const state = {
+  tpl: 'notes', fmt: 'square', time: '9:41',
+  notifBgColor: '#4a5568', callAvatarColor: '#f5c542', callBgColor: '#4a5c1a',
+  notifBgImg: null, notifIconImg: null, callAvatarImg: null, callBgImg: null,
+  todos: [
+    { text: 'Koupit dárek', checked: true },
+    { text: 'Zavolat kamarádce', checked: true },
+    { text: 'Uvařit večeři', checked: true },
+    { text: 'Nezapomenout na dort 🎂', checked: false },
+  ],
+  notifCards: [
+    { appName: 'Zprávy', ntime: 'nyní', title: 'Nová zpráva', body: 'Ahoj! Jak se máš? Dlouho jsme se neviděli, dej vědět 😊' },
+  ],
+  calEvents: [
+    { title: 'Narozeninová oslava 🎉', time: '18:00 – 22:00', loc: 'Restaurace Na Příkopě, Praha' },
+  ],
+};
+
+const DIMS = { square: { w: 1080, h: 1080 }, portrait: { w: 1080, h: 1350 }, story: { w: 1080, h: 1920 } };
+
+// ─── STATUS BAR HTML ──────────────────────────────────────────────────────────
+function statusBar(dark) {
+  const c = dark ? '#fff' : '#000';
+  return `<div class="status-bar" style="color:${c}">
+    <div class="sb-left">
+      <span class="sb-time">${state.time}</span>
+    </div>
+    <div class="sb-right">
+      <div class="sb-signal">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <svg class="sb-wifi" viewBox="0 0 34 26" fill="${c}" xmlns="http://www.w3.org/2000/svg">
+        <path d="M17 20a3 3 0 110 6 3 3 0 010-6z"/>
+        <path d="M17 13c2.9 0 5.5 1.2 7.4 3.1l2.6-2.6C24.5 11 21 9.5 17 9.5s-7.5 1.5-10 4l2.6 2.6C11.5 14.2 14.1 13 17 13z"/>
+        <path d="M17 6c4.8 0 9.1 2 12.2 5.1l2.6-2.6C28.3 5 22.9 2.5 17 2.5S5.7 5 2.2 8.5l2.6 2.6C7.9 8 12.2 6 17 6z"/>
+      </svg>
+      <div class="sb-battery">
+        <div class="sb-battery-body"><div class="sb-battery-fill"></div></div>
+        <div class="sb-battery-cap"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function homeIndicator(dark) {
+  return `<div class="home-indicator ${dark ? 'hi-dark' : 'hi-light'}"></div>`;
+}
+
+function backChevron(color) {
+  return `<svg viewBox="0 0 22 36" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="18,3 4,18 18,33"/>
+  </svg>`;
+}
+
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── TEMPLATES ────────────────────────────────────────────────────────────────
+// In story mode every template wraps its content in .story-frame
+// so ALL elements (status bar, nav, cards) sit within the safe zone
+// (y 384px–1248px = 20%–65% of 1920px).
+
+function renderNotes() {
+  const isStory = state.fmt === 'story';
+  const title = document.getElementById('notes-title').value;
+  const body  = document.getElementById('notes-body').value;
+
+  const content = `
+    ${statusBar(false)}
+    <div class="notes-nav">
+      <div class="nav-back" style="color:#f5a623">${backChevron('#f5a623')} Notes</div>
+      <div class="notes-actions">
+        <span>🕐</span><span>🙂</span>
+        <span style="color:#f5a623">⬆</span>
+        <span style="color:#f5a623">···</span>
+      </div>
+    </div>
+    <div class="notes-body-wrap">
+      <div class="notes-title">${esc(title)}</div>
+      <div class="notes-body">${esc(body)}</div>
+    </div>
+    ${homeIndicator(false)}`;
+
+  return isStory
+    ? `<div id="tpl-notes" class="is-story"><div class="story-frame">${content}</div></div>`
+    : `<div id="tpl-notes">${content}</div>`;
+}
+
+function renderNotif() {
+  const isStory = state.fmt === 'story';
+  const bgStyle = state.notifBgImg ? '' : `background:${state.notifBgColor}`;
+  const bgImg   = state.notifBgImg ? `<img class="notif-bg-img" src="${state.notifBgImg}">` : '';
+
+  const cardsHtml = state.notifCards.map(card => {
+    const iconInner = state.notifIconImg
+      ? `<img src="${state.notifIconImg}" style="width:100%;height:100%;object-fit:cover;">`
+      : `<div style="width:100%;height:100%;background:#f5c542;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:40px;color:#000">${esc((card.appName||'?').charAt(0))}</div>`;
+    return `<div class="notif-card">
+      <div class="notif-header">
+        <div class="notif-app-icon">${iconInner}</div>
+        <div class="notif-app-name">${esc(card.appName)}</div>
+        <div class="notif-time">${esc(card.ntime)}</div>
+      </div>
+      <div class="notif-title">${esc(card.title)}</div>
+      <div class="notif-body">${esc(card.body)}</div>
+    </div>`;
+  }).join('');
+
+  const overlayClass = isStory ? 'story-frame' : 'notif-overlay';
+  return `<div id="tpl-notif" ${isStory?'class="is-story"':''}>
+    <div class="notif-bg" style="${bgStyle}">${bgImg}</div>
+    <div class="${overlayClass}">
+      ${statusBar(true)}
+      <div class="notif-main">${cardsHtml}</div>
+      ${homeIndicator(true)}
+    </div>
+  </div>`;
+}
+
+function renderCall() {
+  const isStory   = state.fmt === 'story';
+  const name      = document.getElementById('call-name').value;
+  const subtitle  = document.getElementById('call-subtitle').value;
+  const bgStyle   = state.callBgImg ? '' : `background:${state.callBgColor}`;
+  const bgImg     = state.callBgImg ? `<img class="call-bg-img" src="${state.callBgImg}">` : '';
+  const avatarInner = state.callAvatarImg
+    ? `<img src="${state.callAvatarImg}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+    : `<div style="width:100%;height:100%;background:${state.callAvatarColor};border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:96px;color:#000">${esc(name.charAt(0))}</div>`;
+
+  const overlayClass = isStory ? 'story-frame' : 'call-overlay';
+  return `<div id="tpl-call" ${isStory?'class="is-story"':''}>
+    <div class="call-bg" style="${bgStyle}">${bgImg}</div>
+    <div class="${overlayClass}">
+      ${statusBar(true)}
+      <div class="call-center">
+        <div class="call-avatar">${avatarInner}</div>
+        <div class="call-name">${esc(name)}</div>
+        <div class="call-subtitle">${esc(subtitle)}</div>
+      </div>
+      <div class="call-buttons">
+        <div class="call-btn">
+          <div class="call-btn-circle decline">
+            <svg viewBox="0 0 24 24" fill="#fff"><g transform="rotate(135 12 12)"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></g></svg>
+          </div>
+          <div class="call-btn-label">Odmítnout</div>
+        </div>
+        <div class="call-btn">
+          <div class="call-btn-circle accept">
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+          </div>
+          <div class="call-btn-label">Přijmout</div>
+        </div>
+      </div>
+      ${homeIndicator(true)}
+    </div>
+  </div>`;
+}
+
+function renderCalendar() {
+  const isStory = state.fmt === 'story';
+  const month   = document.getElementById('cal-month').value;
+  const dayName = document.getElementById('cal-dayname').value;
+  const dayNum  = document.getElementById('cal-daynum').value;
+
+  const eventsHtml = state.calEvents.map(ev => `
+    <div class="cal-event">
+      <div class="cal-event-stripe"></div>
+      <div class="cal-event-body">
+        <div class="cal-event-title">${esc(ev.title)}</div>
+        <div class="cal-event-time">${esc(ev.time)}</div>
+        ${ev.loc ? `<div class="cal-event-loc">📍 ${esc(ev.loc)}</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  const content = `
+    ${statusBar(false)}
+    <div class="cal-nav">
+      <div class="nav-back" style="color:#ff3b30">${backChevron('#ff3b30')} <span class="cal-month">${esc(month)}</span></div>
+      <div class="cal-actions"><span>🎯</span><span>📅</span><span style="font-weight:300">+</span></div>
+    </div>
+    <div class="cal-body">
+      <div class="cal-day-label">${esc(dayName)}</div>
+      <div class="cal-day-num">${esc(dayNum)}</div>
+      <div class="cal-events-list">${eventsHtml}</div>
+    </div>
+    ${homeIndicator(false)}`;
+
+  return isStory
+    ? `<div id="tpl-calendar" class="is-story"><div class="story-frame">${content}</div></div>`
+    : `<div id="tpl-calendar">${content}</div>`;
+}
+
+function renderReminders() {
+  const isStory = state.fmt === 'story';
+  const title   = document.getElementById('rem-title').value;
+  const itemsHtml = state.todos.map(t => `
+    <div class="rem-item">
+      <div class="rem-check ${t.checked?'checked':''}">
+        <svg viewBox="0 0 26 26" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4,13 10,20 22,6"/>
+        </svg>
+      </div>
+      <div class="rem-item-text ${t.checked?'checked':''}">${esc(t.text)}</div>
+    </div>`).join('');
+
+  const content = `
+    ${statusBar(false)}
+    <div class="rem-nav">
+      <div class="nav-back" style="color:#007aff">${backChevron('#007aff')} Seznamy</div>
+      <div class="rem-actions">···</div>
+    </div>
+    <div class="rem-body">
+      <div class="rem-title-text">${esc(title)}</div>
+      <div class="rem-list">
+        ${itemsHtml}
+        <div class="rem-add">
+          <div class="rem-add-icon">+</div>
+          <div class="rem-add-label">Nová připomínka</div>
+        </div>
+      </div>
+    </div>
+    ${homeIndicator(false)}`;
+
+  return isStory
+    ? `<div id="tpl-reminders" class="is-story"><div class="story-frame">${content}</div></div>`
+    : `<div id="tpl-reminders">${content}</div>`;
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+let viewAll = false;
+
+function render() {
+  state.time = document.getElementById('status-time').value || '9:41';
+  if (viewAll) { renderAll(); return; }
+
+  const frame = document.getElementById('preview-frame');
+  frame.style.display = '';
+  const dim = DIMS[state.fmt];
+
+  const maxW = window.innerWidth - 370;
+  const maxH = window.innerHeight - 60;
+  const scale = Math.min(maxW / dim.w, maxH / dim.h, 0.55);
+
+  frame.style.width  = dim.w * scale + 'px';
+  frame.style.height = dim.h * scale + 'px';
+
+  const fns = { notes: renderNotes, notif: renderNotif, call: renderCall, calendar: renderCalendar, reminders: renderReminders };
+  frame.innerHTML = fns[state.tpl]();
+
+  const inner = frame.firstElementChild;
+  if (inner) {
+    inner.style.cssText = `position:absolute;top:0;left:0;width:${dim.w}px;height:${dim.h}px;transform:scale(${scale});transform-origin:top left;`;
+  }
+  drawSafeZoneOverlay();
+  const fmtLabels = { square: '1080×1080', portrait: '1080×1350', story: '1080×1920' };
+  document.getElementById('btn-export').textContent = `Stáhnout PNG (${fmtLabels[state.fmt]})`;
+}
+
+function renderAll() {
+  state.time = document.getElementById('status-time').value || '9:41';
+  const main = document.getElementById('main');
+  const fns = { notes: renderNotes, notif: renderNotif, call: renderCall, calendar: renderCalendar, reminders: renderReminders };
+  const formats = ['square', 'portrait', 'story'];
+  const labels = ['1080×1080', '1080×1350', '1080×1920'];
+  const maxH = window.innerHeight - 80;
+  const origFmt = state.fmt;
+
+  const panels = formats.map((fmt, fi) => {
+    state.fmt = fmt;
+    const dim = DIMS[fmt];
+    const scale = Math.min((window.innerWidth - 390) / (dim.w * formats.length + 60), maxH / dim.h, 0.38);
+    const w = dim.w * scale;
+    const h = dim.h * scale;
+    const html = fns[state.tpl]();
+    return { dim, scale, w, h, html, label: labels[fi] };
+  });
+  state.fmt = origFmt;
+
+  main.innerHTML = '';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:20px;align-items:flex-end;justify-content:center;flex-wrap:nowrap;padding:10px;';
+  main.appendChild(row);
+
+  panels.forEach(({ dim, scale, w, h, html, label }, fi) => {
+    const col = document.createElement('div');
+    col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+
+    const frame = document.createElement('div');
+    frame.style.cssText = `position:relative;width:${w}px;height:${h}px;overflow:hidden;flex-shrink:0;box-shadow:0 10px 30px rgba(0,0,0,0.7);`;
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = html;
+    const inner = wrap.firstElementChild;
+    if (inner) {
+      inner.style.cssText = `position:absolute;top:0;left:0;width:${dim.w}px;height:${dim.h}px;transform:scale(${scale});transform-origin:top left;`;
+      frame.appendChild(inner);
+    }
+
+    // Safe zone overlay on story panel
+    if (showSafeZone && formats[fi] === 'story') {
+      const topPx = 250 * scale;
+      const botPx = 420 * scale;
+      const ov = document.createElement('div');
+      ov.className = 'sz-overlay';
+      ov.innerHTML = `
+        <div class="sz-band sz-band-top" style="height:${topPx}px">
+          <div class="sz-label sz-label-top">NAHOŘE 250px — nebezpečná zóna</div>
+        </div>
+        <div class="sz-band sz-band-bot" style="height:${botPx}px">
+          <div class="sz-label sz-label-bot">DOLE 420px — nebezpečná zóna</div>
+        </div>`;
+      frame.appendChild(ov);
+    }
+
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:11px;color:#555;font-weight:600;letter-spacing:0.5px;';
+    lbl.textContent = label;
+
+    col.appendChild(frame);
+    col.appendChild(lbl);
+    row.appendChild(col);
+  });
+}
+
+// ─── NOTIF CARDS UI ───────────────────────────────────────────────────────────
+function renderNotifCardsUI() {
+  const container = document.getElementById('notif-cards-ui');
+  container.innerHTML = state.notifCards.map((c, i) => `
+    <div style="background:#2a2a2a;border-radius:8px;padding:10px;position:relative;">
+      <button class="remove-btn nc-remove" data-idx="${i}" style="position:absolute;top:6px;right:8px;">×</button>
+      <div style="font-size:11px;color:#555;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">Notifikace ${i+1}</div>
+      <label style="margin-top:0">Aplikace</label>
+      <input type="text" class="nc-appname" data-idx="${i}" value="${esc(c.appName)}">
+      <label>Čas</label>
+      <input type="text" class="nc-time" data-idx="${i}" value="${esc(c.ntime)}">
+      <label>Nadpis</label>
+      <input type="text" class="nc-title" data-idx="${i}" value="${esc(c.title)}">
+      <label>Tělo zprávy</label>
+      <textarea class="nc-body" data-idx="${i}">${esc(c.body)}</textarea>
+    </div>`).join('');
+
+  container.querySelectorAll('.nc-appname').forEach(el => el.addEventListener('input', e => { state.notifCards[+e.target.dataset.idx].appName = e.target.value; render(); }));
+  container.querySelectorAll('.nc-time').forEach(el =>   el.addEventListener('input', e => { state.notifCards[+e.target.dataset.idx].ntime = e.target.value; render(); }));
+  container.querySelectorAll('.nc-title').forEach(el =>  el.addEventListener('input', e => { state.notifCards[+e.target.dataset.idx].title = e.target.value; render(); }));
+  container.querySelectorAll('.nc-body').forEach(el =>   el.addEventListener('input', e => { state.notifCards[+e.target.dataset.idx].body = e.target.value; render(); }));
+  container.querySelectorAll('.nc-remove').forEach(el => el.addEventListener('click', e => { state.notifCards.splice(+e.target.dataset.idx, 1); renderNotifCardsUI(); render(); }));
+}
+
+document.getElementById('add-notif-card').addEventListener('click', () => {
+  state.notifCards.push({ appName: 'App', ntime: 'nyní', title: 'Nadpis', body: 'Text zprávy...' });
+  renderNotifCardsUI(); render();
+});
+
+// ─── CAL EVENTS UI ────────────────────────────────────────────────────────────
+function renderCalEventsUI() {
+  const container = document.getElementById('cal-events-ui');
+  container.innerHTML = state.calEvents.map((ev, i) => `
+    <div style="background:#2a2a2a;border-radius:8px;padding:10px;position:relative;">
+      <button class="remove-btn ce-remove" data-idx="${i}" style="position:absolute;top:6px;right:8px;">×</button>
+      <div style="font-size:11px;color:#555;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">Událost ${i+1}</div>
+      <label style="margin-top:0">Název</label>
+      <input type="text" class="ce-title" data-idx="${i}" value="${esc(ev.title)}">
+      <label>Čas</label>
+      <input type="text" class="ce-time" data-idx="${i}" value="${esc(ev.time)}">
+      <label>Místo / popis</label>
+      <input type="text" class="ce-loc" data-idx="${i}" value="${esc(ev.loc)}">
+    </div>`).join('');
+
+  container.querySelectorAll('.ce-title').forEach(el => el.addEventListener('input', e => { state.calEvents[+e.target.dataset.idx].title = e.target.value; render(); }));
+  container.querySelectorAll('.ce-time').forEach(el =>  el.addEventListener('input', e => { state.calEvents[+e.target.dataset.idx].time  = e.target.value; render(); }));
+  container.querySelectorAll('.ce-loc').forEach(el =>   el.addEventListener('input', e => { state.calEvents[+e.target.dataset.idx].loc   = e.target.value; render(); }));
+  container.querySelectorAll('.ce-remove').forEach(el => el.addEventListener('click', e => { state.calEvents.splice(+e.target.dataset.idx, 1); renderCalEventsUI(); render(); }));
+}
+
+document.getElementById('add-cal-event').addEventListener('click', () => {
+  state.calEvents.push({ title: 'Nová událost', time: '10:00', loc: '' });
+  renderCalEventsUI(); render();
+});
+
+// ─── TODO UI ──────────────────────────────────────────────────────────────────
+function renderTodoUI() {
+  const container = document.getElementById('todo-items');
+  container.innerHTML = state.todos.map((t, i) => `
+    <div class="todo-item">
+      <input type="text" value="${esc(t.text)}" data-idx="${i}" class="todo-text">
+      <select data-idx="${i}" class="todo-state">
+        <option value="0" ${!t.checked?'selected':''}>Nesplněno</option>
+        <option value="1" ${t.checked?'selected':''}>Splněno</option>
+      </select>
+      <button class="remove-btn" data-idx="${i}">×</button>
+    </div>`).join('');
+
+  container.querySelectorAll('.todo-text').forEach(el =>
+    el.addEventListener('input', e => { state.todos[+e.target.dataset.idx].text = e.target.value; render(); }));
+  container.querySelectorAll('.todo-state').forEach(el =>
+    el.addEventListener('change', e => { state.todos[+e.target.dataset.idx].checked = e.target.value === '1'; render(); }));
+  container.querySelectorAll('.remove-btn').forEach(el =>
+    el.addEventListener('click', e => { state.todos.splice(+e.target.dataset.idx, 1); renderTodoUI(); render(); }));
+}
+
+document.getElementById('add-todo').addEventListener('click', () => {
+  state.todos.push({ text: 'Nová položka', checked: false }); // "nová položka" je stejné v češtině
+  renderTodoUI(); render();
+});
+
+// ─── UPLOAD ───────────────────────────────────────────────────────────────────
+function setupUpload(inputId, prevId, key) {
+  const input = document.getElementById(inputId);
+  const prev  = document.getElementById(prevId);
+  const area  = prev.closest('.upload-area');
+
+  // Clear button — created once, shown/hidden as needed
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = '×';
+  clearBtn.style.cssText = 'position:absolute;top:5px;right:5px;background:rgba(0,0,0,0.55);border:none;color:#fff;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer;display:none;z-index:10;';
+  area.appendChild(clearBtn);
+
+  clearBtn.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    state[key] = null;
+    prev.src = ''; prev.style.display = 'none';
+    area.querySelector('.upload-label').style.display = '';
+    input.value = '';
+    clearBtn.style.display = 'none';
+    render();
+  });
+
+  input.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      state[key] = ev.target.result;
+      prev.src = ev.target.result; prev.style.display = 'block';
+      area.querySelector('.upload-label').style.display = 'none';
+      clearBtn.style.display = 'block';
+      render();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─── SWATCHES ─────────────────────────────────────────────────────────────────
+function setupSwatches(groupId, key) {
+  document.getElementById(groupId).querySelectorAll('.color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      document.getElementById(groupId).querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+      sw.classList.add('active');
+      state[key] = sw.dataset.color; render();
+    });
+  });
+}
+
+// ─── EXPORT ───────────────────────────────────────────────────────────────────
+document.getElementById('btn-export').addEventListener('click', async () => {
+  const dim = DIMS[state.fmt];
+  const off = document.createElement('div');
+  off.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${dim.w}px;height:${dim.h}px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;`;
+  document.body.appendChild(off);
+
+  const st = document.createElement('style');
+  st.textContent = document.querySelector('style').textContent;
+  off.appendChild(st);
+
+  const fns = { notes: renderNotes, notif: renderNotif, call: renderCall, calendar: renderCalendar, reminders: renderReminders };
+  const wrap = document.createElement('div');
+  wrap.innerHTML = fns[state.tpl]();
+  const inner = wrap.firstElementChild;
+  inner.style.cssText = `position:absolute;top:0;left:0;width:${dim.w}px;height:${dim.h}px;`;
+  off.appendChild(inner);
+
+  const canvas = await html2canvas(off, { width: dim.w, height: dim.h, scale: 1, useCORS: true, allowTaint: true, logging: false });
+  document.body.removeChild(off);
+
+  const a = document.createElement('a');
+  a.download = `creative-${state.tpl}-${state.fmt}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+});
+
+// ─── EXPORT ALL ───────────────────────────────────────────────────────────────
+document.getElementById('btn-export-all').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-export-all');
+  btn.textContent = 'Generuji...'; btn.disabled = true;
+
+  const fns = { notes: renderNotes, notif: renderNotif, call: renderCall, calendar: renderCalendar, reminders: renderReminders };
+  const formats = ['square', 'portrait', 'story'];
+  const origFmt = state.fmt;
+  const zip = new JSZip();
+
+  for (const fmt of formats) {
+    state.fmt = fmt;
+    const dim = DIMS[fmt];
+
+    const off = document.createElement('div');
+    off.style.cssText = `position:fixed;top:-9999px;left:-9999px;width:${dim.w}px;height:${dim.h}px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;`;
+    document.body.appendChild(off);
+
+    const st = document.createElement('style');
+    st.textContent = document.querySelector('style').textContent;
+    off.appendChild(st);
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = fns[state.tpl]();
+    const inner = wrap.firstElementChild;
+    inner.style.cssText = `position:absolute;top:0;left:0;width:${dim.w}px;height:${dim.h}px;`;
+    off.appendChild(inner);
+
+    const canvas = await html2canvas(off, { width: dim.w, height: dim.h, scale: 1, useCORS: true, allowTaint: true, logging: false });
+    document.body.removeChild(off);
+
+    const base64 = canvas.toDataURL('image/png').split(',')[1];
+    zip.file(`creative-${state.tpl}-${fmt}.png`, base64, { base64: true });
+  }
+
+  state.fmt = origFmt;
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.download = `creative-${state.tpl}.zip`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  btn.textContent = 'Stáhnout vše (3 formáty)'; btn.disabled = false;
+});
+
+// ─── VIEW ALL TOGGLE ──────────────────────────────────────────────────────────
+document.getElementById('btn-viewall').addEventListener('click', function() {
+  viewAll = !viewAll;
+  this.textContent = viewAll ? 'Zobrazit jeden formát' : 'Zobrazit vše najednou';
+  this.style.color  = viewAll ? '#007aff' : '#aaa';
+  this.style.borderColor = viewAll ? '#007aff' : '#3a3a3a';
+  if (!viewAll) {
+    document.getElementById('main').innerHTML = '<div id="preview-frame"></div>';
+  }
+  render();
+});
+
+// ─── BIND ─────────────────────────────────────────────────────────────────────
+['status-time','notes-title','notes-body','call-name','call-subtitle',
+ 'cal-month','cal-dayname','cal-daynum','rem-title'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', render); });
+
+document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active');
+  state.tpl = btn.dataset.tpl;
+  document.querySelectorAll('.field-group').forEach(fg => fg.classList.remove('active'));
+  document.getElementById('fg-' + state.tpl)?.classList.add('active');
+  render();
+}));
+
+document.querySelectorAll('.format-btn').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active');
+  state.fmt = btn.dataset.fmt; render();
+}));
+
+setupUpload('up-notif-icon',  'prev-notif-icon',  'notifIconImg');
+setupUpload('up-notif-bg',    'prev-notif-bg',     'notifBgImg');
+setupUpload('up-call-avatar', 'prev-call-avatar',  'callAvatarImg');
+setupUpload('up-call-bg',     'prev-call-bg',      'callBgImg');
+
+setupSwatches('notif-bg-colors',    'notifBgColor');
+setupSwatches('call-avatar-colors', 'callAvatarColor');
+setupSwatches('call-bg-colors',     'callBgColor');
+
+// ─── SAFE ZONE OVERLAY ───────────────────────────────────────────────────────
+let showSafeZone = false;
+
+function drawSafeZoneOverlay() {
+  const frame = document.getElementById('preview-frame');
+  // Remove existing overlay
+  frame.querySelectorAll('.sz-overlay').forEach(el => el.remove());
+  if (!showSafeZone || state.fmt !== 'story') return;
+
+  const dim = DIMS.story;                           // 1080 × 1920
+  const scale = parseFloat(frame.style.width) / dim.w;
+  const topPct = 250/1920, botPct = 420/1920;      // top: 250px, bottom: 420px from bottom
+  const topPx  = dim.h * topPct * scale;
+  const botPx  = dim.h * botPct * scale;
+
+  const ov = document.createElement('div');
+  ov.className = 'sz-overlay';
+  ov.innerHTML = `
+    <div class="sz-band sz-band-top" style="height:${topPx}px">
+      <div class="sz-label sz-label-top">NAHOŘE 250px — nebezpečná zóna</div>
+    </div>
+    <div class="sz-band sz-band-bot" style="height:${botPx}px">
+      <div class="sz-label sz-label-bot">DOLE 420px — nebezpečná zóna</div>
+    </div>`;
+  frame.appendChild(ov);
+}
+
+document.getElementById('btn-safezone').addEventListener('click', function() {
+  showSafeZone = !showSafeZone;
+  this.textContent = showSafeZone ? 'Skrýt safe zóny' : 'Zobrazit safe zóny';
+  this.style.color  = showSafeZone ? '#ec407a' : '#aaa';
+  this.style.borderColor = showSafeZone ? '#ec407a' : '#3a3a3a';
+  render();
+});
+
+window.addEventListener('resize', render);
+renderNotifCardsUI();
+renderCalEventsUI();
+renderTodoUI();
+render();
+</script>
+</body>
+</html>
