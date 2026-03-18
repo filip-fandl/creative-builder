@@ -671,14 +671,15 @@ function renderAll() {
     if (showSafeZone && formats[fi] === 'story') {
       const topPx = 250 * scale;
       const botPx = 420 * scale;
+      const fs = Math.max(7, Math.round(9 * scale * (DIMS.story.w / DIMS.story.w)));
       const ov = document.createElement('div');
       ov.className = 'sz-overlay';
       ov.innerHTML = `
         <div class="sz-band sz-band-top" style="height:${topPx}px">
-          <div class="sz-label sz-label-top">NAHOŘE 250px — nebezpečná zóna</div>
+          <div class="sz-label sz-label-top" style="font-size:${fs}px;white-space:nowrap;overflow:hidden;max-width:100%;">↑ 250px</div>
         </div>
         <div class="sz-band sz-band-bot" style="height:${botPx}px">
-          <div class="sz-label sz-label-bot">DOLE 420px — nebezpečná zóna</div>
+          <div class="sz-label sz-label-bot" style="font-size:${fs}px;white-space:nowrap;overflow:hidden;max-width:100%;">↓ 420px</div>
         </div>`;
       frame.appendChild(ov);
     }
