@@ -145,7 +145,7 @@
   /* ══ NOTIFICATION ═══════════════════════════════════════════ */
   #tpl-notif { width: 100%; height: 100%; display: flex; flex-direction: column; position: relative; }
   .notif-bg { position: absolute; inset: 0; }
-  .notif-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(40px) brightness(0.65); transform: scale(1.12); }
+  .notif-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .notif-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; }
   .notif-main { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; padding: 16px 36px 100px; gap: 18px; }
   .notif-card { background: rgba(255,255,255,0.93); border-radius: 30px; padding: 28px 32px 32px; backdrop-filter: blur(30px); }
@@ -160,7 +160,7 @@
   /* ══ CALL ═══════════════════════════════════════════════════ */
   #tpl-call { width: 100%; height: 100%; display: flex; flex-direction: column; position: relative; }
   .call-bg { position: absolute; inset: 0; }
-  .call-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(50px) brightness(0.45) saturate(1.6); transform: scale(1.15); }
+  .call-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
   .call-overlay { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; }
   .call-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 0 60px; }
   .call-avatar { width: 240px; height: 240px; border-radius: 50%; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 96px; }
@@ -184,7 +184,7 @@
   .cal-day-label { padding: 0 50px; font-size: 30px; font-weight: 500; color: #888; letter-spacing: 1px; text-transform: uppercase; }
   .cal-day-num { padding: 8px 50px 28px; font-size: 160px; font-weight: 300; color: #ff3b30; letter-spacing: -6px; line-height: 1; }
   .cal-events-list { display: flex; flex-direction: column; gap: 18px; }
-  .cal-event { margin: 0 36px; background: #fff; border-radius: 24px; overflow: hidden; display: flex; box-shadow: 0 2px 12px rgba(0,0,0,0.09); }
+  .cal-event { margin: 0 36px; background: #fff; border-radius: 24px; overflow: hidden; display: flex; border: 1px solid rgba(0,0,0,0.07); }
   .cal-event-stripe { width: 10px; background: #ff3b30; flex-shrink: 0; }
   .cal-event-body { padding: 28px 32px; flex: 1; }
   .cal-event-title { font-size: 42px; font-weight: 700; color: #000; margin-bottom: 10px; line-height: 1.2; word-break: break-word; }
@@ -775,8 +775,28 @@ document.getElementById('add-todo').addEventListener('click', () => {
   renderTodoUI(); render();
 });
 
+// ─── BACKGROUND IMAGE PRE-PROCESSOR ──────────────────────────────────────────
+// html2canvas nepodporuje CSS filter — blur/brightness zapečeme priamo do pixelov
+function processBackgroundImage(src, blurPx, brightnessVal, saturationVal, expandFactor, cb) {
+  const img = new Image();
+  img.onload = () => {
+    const W = img.naturalWidth  || 1080;
+    const H = img.naturalHeight || 1080;
+    const canvas = document.createElement('canvas');
+    canvas.width  = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.filter = `blur(${blurPx}px) brightness(${brightnessVal}) saturate(${saturationVal})`;
+    // Expand drawing to prevent blur edge artifacts (equiv. of transform:scale)
+    const ex = expandFactor;
+    ctx.drawImage(img, -(W * (ex - 1)) / 2, -(H * (ex - 1)) / 2, W * ex, H * ex);
+    cb(canvas.toDataURL('image/jpeg', 0.88));
+  };
+  img.src = src;
+}
+
 // ─── UPLOAD ───────────────────────────────────────────────────────────────────
-function setupUpload(inputId, prevId, key) {
+function setupUpload(inputId, prevId, key, processor) {
   const input = document.getElementById(inputId);
   const prev  = document.getElementById(prevId);
   const area  = prev.closest('.upload-area');
@@ -801,11 +821,16 @@ function setupUpload(inputId, prevId, key) {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
-      state[key] = ev.target.result;
-      prev.src = ev.target.result; prev.style.display = 'block';
-      area.querySelector('.upload-label').style.display = 'none';
-      clearBtn.style.display = 'block';
-      render();
+      const raw = ev.target.result;
+      const finalize = (processed) => {
+        state[key] = processed;
+        prev.src = raw; prev.style.display = 'block';
+        area.querySelector('.upload-label').style.display = 'none';
+        clearBtn.style.display = 'block';
+        render();
+      };
+      if (processor) processor(raw, finalize);
+      else finalize(raw);
     };
     reader.readAsDataURL(file);
   });
@@ -926,9 +951,11 @@ document.querySelectorAll('.format-btn').forEach(btn => btn.addEventListener('cl
 }));
 
 setupUpload('up-notif-icon',  'prev-notif-icon',  'notifIconImg');
-setupUpload('up-notif-bg',    'prev-notif-bg',     'notifBgImg');
+setupUpload('up-notif-bg',    'prev-notif-bg',     'notifBgImg',
+  (src, cb) => processBackgroundImage(src, 40, 0.65, 1.6, 1.14, cb));
 setupUpload('up-call-avatar', 'prev-call-avatar',  'callAvatarImg');
-setupUpload('up-call-bg',     'prev-call-bg',      'callBgImg');
+setupUpload('up-call-bg',     'prev-call-bg',      'callBgImg',
+  (src, cb) => processBackgroundImage(src, 50, 0.45, 1.6, 1.16, cb));
 
 setupSwatches('notif-bg-colors',    'notifBgColor');
 setupSwatches('call-avatar-colors', 'callAvatarColor');
